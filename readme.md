@@ -1,6 +1,8 @@
 # HealBot
 
-## Update: HealBot now depends on [libs/lor](https://github.com/lorand-ffxi/lor_libs)
+## Dependency: [AP Libraries](https://github.com/aldenpark/ap-libs)
+
+Install the library files under `Windower/addons/libs/ap/` before loading HealBot.
 
 ## NEW: IPC has been added! (see below)
 

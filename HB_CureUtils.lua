@@ -6,8 +6,8 @@
 --==============================================================================
 
 local cu = {cure_types={'cure','waltz','curaga','waltzga'} }
-local Pos = _libs.lor.position
-local ffxi = _libs.lor.ffxi
+local Pos = _libs.ap.position
+local ffxi = _libs.ap.ffxi
 
 --==============================================================================
 --                  Static Cure Information

@@ -9,10 +9,10 @@ local buffs = {
     debuffList = {},
     buffList = {},
     ignored_debuffs = {},
-    action_buff_map = lor_settings.load('data/action_buff_map.lua')
+    action_buff_map = ap_settings.load('data/action_buff_map.lua')
 }
-local lc_res = _libs.lor.resources.lc_res
-local ffxi = _libs.lor.ffxi
+local lc_res = _libs.ap.resources.lc_res
+local ffxi = _libs.ap.ffxi
 
 --==============================================================================
 --          Local Player Buff Checking

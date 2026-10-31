@@ -6,7 +6,7 @@
 --==============================================================================
 
 local offense = {
-    immunities=lor_settings.load('data/mob_immunities.lua'),
+    immunities=ap_settings.load('data/mob_immunities.lua'),
     assist={active = false, engage = false},
     debuffs={}, ignored={}, mobs={}, dispel={},
     debuffing_active = true

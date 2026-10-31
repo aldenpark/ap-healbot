@@ -19,12 +19,12 @@ TODO:
 --]]
 
 require('luau')
-require('lor/lor_utils')
-_libs.lor.include_addon_name = true
-_libs.lor.req('all', {n='packets',v='2016.10.27.0'})
+require('ap/ap_utils')
+_libs.ap.include_addon_name = true
+_libs.ap.req('all', {n='packets',v='2016.10.27.0'})
 _libs.req('queues')
-lor_settings = _libs.lor.settings
-serialua = _libs.lor.serialization
+ap_settings = _libs.ap.settings
+serialua = _libs.ap.serialization
 
 hb = {
     active = false, configs_loaded = false, partyMemberInfo = {}, ignoreList = S{}, extraWatchList = S{},
@@ -33,7 +33,7 @@ hb = {
 }
 healer = T{}
 settings = {}
-_libs.lor.debug = hb.modes.debug
+_libs.ap.debug = hb.modes.debug
 
 res = require('resources')
 config = require('config')
@@ -60,14 +60,14 @@ local pm_keys = {
 
 
 hb._events['load'] = windower.register_event('load', function()
-    if not _libs.lor then
-        local err_msg = 'HealBot ERROR: Missing core requirement: https://github.com/lorand-ffxi/lor_libs'
+    if not _libs.ap then
+        local err_msg = 'HealBot ERROR: Missing core requirement: https://github.com/aldenpark/ap-libs'
         windower.add_to_chat(39, err_msg)
         error(err_msg)
     end
     atcc(262, 'Welcome to HealBot! To see a list of commands, type //hb help')
 
-    _G["healer"] = _libs.lor.actor.Actor.new()
+    _G["healer"] = _libs.ap.actor.Actor.new()
     utils.load_configs()
     CureUtils.init_cure_potencies()
 end)
@@ -230,7 +230,7 @@ local function _getMonitoredPlayers()
     hb.txts.montoredBox:visible(settings.textBoxes.montoredBox.visible)
     return targets
 end
-hb.getMonitoredPlayers = _libs.lor.advutils.tcached(1, _getMonitoredPlayers)
+hb.getMonitoredPlayers = _libs.ap.advutils.tcached(1, _getMonitoredPlayers)
 
 
 local function _getMonitoredIds()
@@ -243,7 +243,7 @@ local function _getMonitoredIds()
     end
     return ids
 end
-hb.getMonitoredIds = _libs.lor.advutils.tcached(1, _getMonitoredIds)
+hb.getMonitoredIds = _libs.ap.advutils.tcached(1, _getMonitoredIds)
 
 
 function hb.follow_target_exists()

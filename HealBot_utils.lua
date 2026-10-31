@@ -8,9 +8,9 @@
 --==============================================================================
 
 utils = {normalize={}}
-local lor_res = _libs.lor.resources
-local lc_res = lor_res.lc_res
-local ffxi = _libs.lor.ffxi
+local ap_res = _libs.ap.resources
+local lc_res = ap_res.lc_res
+local ffxi = _libs.ap.ffxi
 
 
 function utils.normalize_str(str)
@@ -309,14 +309,14 @@ function processCommand(command,...)
     elseif command == 'status' then
         printStatus()
     elseif command == 'info' then
-        if not _libs.lor.exec then
-            atc(3,'Unable to parse info.  Windower/addons/libs/lor/lor_exec.lua was unable to be loaded.')
-            atc(3,'If you would like to use this function, please visit https://github.com/lorand-ffxi/lor_libs to download it.')
+        if not _libs.ap.exec then
+            atc(3,'Unable to parse info. Windower/addons/libs/ap/ap_exec.lua was unable to be loaded.')
+            atc(3,'If you would like to use this function, please visit https://github.com/aldenpark/ap-libs to download it.')
             return
         end
         local cmd = args[1]     --Take the first element as the command
         table.remove(args, 1)   --Remove the first from the list of args
-        _libs.lor.exec.process_input(cmd, args)
+        _libs.ap.exec.process_input(cmd, args)
     else
         atc('Error: Unknown command')
     end
@@ -330,13 +330,13 @@ local function _get_player_id(player_name)
     end
     return nil
 end
-utils.get_player_id = _libs.lor.advutils.scached(_get_player_id)
+utils.get_player_id = _libs.ap.advutils.scached(_get_player_id)
 
 
 function utils.register_offensive_debuff(args, cancel)
     local argstr = table.concat(args,' ')
     local spell_name = utils.formatActionName(argstr)
-    local spell = lor_res.action_for(spell_name)
+    local spell = ap_res.action_for(spell_name)
     if (spell ~= nil) then
         if healer:can_use(spell) then
             offense.maintain_debuff(spell, cancel)
@@ -352,7 +352,7 @@ end
 function utils.register_spam_action(args)
     local argstr = table.concat(args,' ')
     local action_name = utils.formatActionName(argstr)
-    local action = lor_res.action_for(action_name)
+    local action = ap_res.action_for(action_name)
     if (action ~= nil) then
         if healer:can_use(action) then
             settings.spam.name = action.en
@@ -369,7 +369,7 @@ end
 function utils.register_ws(args)
     local argstr = table.concat(args,' ')
     local wsname = utils.formatActionName(argstr)
-    local ws = lor_res.action_for(wsname)
+    local ws = ap_res.action_for(wsname)
     if (ws ~= nil) then
         settings.ws.name = ws.en
         atcfs('Will now use %s', ws.en)
@@ -452,7 +452,7 @@ end
 
 function toggleMode(mode, cmd, msg, msgErr)
     utils.toggleX(hb.modes, mode, cmd, msg, msgErr)
-    _libs.lor.debug = hb.modes.debug
+    _libs.ap.debug = hb.modes.debug
 end
 
 function disableCommand(cmd, disable)
@@ -636,7 +636,7 @@ function utils.load_configs()
         disable = {curaga=false},
         ignoreTrusts=true, deactivateIndoors=true, activateOutdoors=false
     }
-    local loaded = lor_settings.load('data/settings.lua', defaults)
+    local loaded = ap_settings.load('data/settings.lua', defaults)
     utils.update_settings(loaded)
     utils.refresh_textBoxes()
     
@@ -650,10 +650,10 @@ function utils.load_configs()
     
     hb.config = {
         aliases = config.load('../shortcuts/data/aliases.xml'),
-        mabil_debuffs = lor_settings.load('data/mabil_debuffs.lua'),
-        buff_lists = lor_settings.load('data/buffLists.lua', buff_lists_defaults),
-        priorities = lor_settings.load('data/priorities.lua'),
-        cure_potency = lor_settings.load('data/cure_potency.lua', cure_potency_defaults)
+        mabil_debuffs = ap_settings.load('data/mabil_debuffs.lua'),
+        buff_lists = ap_settings.load('data/buffLists.lua', buff_lists_defaults),
+        priorities = ap_settings.load('data/priorities.lua'),
+        cure_potency = ap_settings.load('data/cure_potency.lua', cure_potency_defaults)
     }
     hb.config.priorities.players =        hb.config.priorities.players or {}
     hb.config.priorities.jobs =           hb.config.priorities.jobs or {}

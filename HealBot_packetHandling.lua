@@ -5,12 +5,12 @@
 --]]
 --==============================================================================
 
-local messages_blacklist = _libs.lor.packets.messages_blacklist
-local messages_initiating = _libs.lor.packets.messages_initiating
-local messages_completing = _libs.lor.packets.messages_completing
+local messages_blacklist = _libs.ap.packets.messages_blacklist
+local messages_initiating = _libs.ap.packets.messages_initiating
+local messages_completing = _libs.ap.packets.messages_completing
 
-local get_action_info = _libs.lor.packets.get_action_info
-local parse_char_update = _libs.lor.packets.parse_char_update
+local get_action_info = _libs.ap.packets.get_action_info
+local parse_char_update = _libs.ap.packets.parse_char_update
 
 
 --[[

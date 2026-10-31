@@ -152,7 +152,7 @@ local function _getPlayerPriority(tname)
     local playerprio = prios.players[tname] or prios.players[tname:lower()] or prios.default
     return math.min(jobprio, playerprio)
 end
-getPlayerPriority = _libs.lor.advutils.scached(_getPlayerPriority)
+getPlayerPriority = _libs.ap.advutils.scached(_getPlayerPriority)
 
 
 function getBuffPriority(buff)
