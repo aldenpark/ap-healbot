@@ -801,6 +801,10 @@ function utils.refresh_textBoxes()
             hb.txts[box]:destroy()
         end
         hb.txts[box] = texts.new(bst)
+        texts.register_event(hb.txts[box], 'drag', function(text)
+            bs.x, bs.y = text:pos()
+            hb.ui_dragged = true
+        end)
     end
 end
 
@@ -840,7 +844,7 @@ function help_text()
         {'on | off','Activate / deactivate HealBot (does not affect follow)'},
         {'reload','Reload HealBot, resetting everything'},
         {'refresh','Reloads settings XMLs in addons/HealBot/data/'},
-        {'fcmd','Sets a player to follow, the distance to maintain, or toggles being active with no argument'},
+        {'fcmd','Sets a follow target/distance in yalms, or toggles follow with no argument'},
         {'buff <player> <spell>[, <spell>[, ...]]','Sets spell(s) to be maintained on the given player'},
         {'cancelbuff <player> <spell>[, <spell>[, ...]]','Un-sets spell(s) to be maintained on the given player'},
         {'blcmd','Sets the given list of spells to be maintained on the given player'},
@@ -871,7 +875,7 @@ function help_text()
         {'help','Displays this help text'}
     }
     local acmds = {
-        ['fcmd']=('f'):colorize(ac,cc)..'ollow [<player> | dist <distance> | off | resume]',
+        ['fcmd']=('f'):colorize(ac,cc)..'ollow [<player> | dist <yalms> | off | resume]',
         ['ascmd']=('as'):colorize(ac,cc)..'sist [<player> | attack | off | resume]',
         ['wscmd1']=('w'):colorize(ac,cc)..'eapon'..('s'):colorize(ac,cc)..'kill use <ws name>',
         ['wscmd2']=('w'):colorize(ac,cc)..'eapon'..('s'):colorize(ac,cc)..'kill hp <sign> <mob hp%>',

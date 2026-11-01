@@ -79,7 +79,7 @@ local options = {
         label = function()
             local target = settings.follow.target
             local state = not target and 'NO TARGET' or (settings.follow.active and target or ('OFF ('..target..')'))
-            return ('Follow: %s'):format(state)
+            return ('Follow: %s | distance %sy'):format(state, tostring(settings.follow.distance or 3))
         end,
         toggle = function()
             if settings.follow.target then

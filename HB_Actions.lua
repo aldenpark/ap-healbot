@@ -8,6 +8,21 @@
 local actions = {queue=L()}
 local resources_lib = _libs.ffxi.resources
 local ffxi = _libs.ffxi.ffxi
+local resting_status = res.statuses:with('en', 'Resting').id
+local stand_pending_at
+
+
+local function stand_if_resting(player)
+    if player.status == resting_status then
+        if not stand_pending_at or os.clock() - stand_pending_at > 2 then
+            healer:send_cmd('input /heal')
+            stand_pending_at = os.clock()
+        end
+        return true
+    end
+    stand_pending_at = nil
+    return false
+end
 
 
 local function local_queue_reset()
@@ -89,6 +104,7 @@ function actions.take_action(player, partner, targ)
     local_queue_reset()
     local action = actions.get_defensive_action()
     if (action ~= nil) then         --If there's a defensive action to perform
+        if stand_if_resting(player) then return true end
         --Record attempt time for buffs/debuffs
         buffs.buffList[action.name] = buffs.buffList[action.name] or {}
         if (action.type == 'buff') and (buffs.buffList[action.name][action.buff]) then
@@ -97,27 +113,44 @@ function actions.take_action(player, partner, targ)
             buffs.debuffList[action.name][action.debuff.id].attempted = os.clock()
         end
         healer:take_action(action)
+        return true
     else                        --Otherwise, there may be an offensive action
+        local action_taken = false
         if (targ ~= nil) or hb.modes.independent then
             local self_engaged = (player.status == 1)
             if (targ ~= nil) then
                 local partner_engaged = (partner.status == 1)
                 if (player.target_index == partner.target_index) then
                     if offense.assist.engage and partner_engaged and (not self_engaged) then
+                        if stand_if_resting(player) then return true end
                         healer:send_cmd('input /attack on')
+                        action_taken = true
                     else
-                        healer:take_action(actions.get_offensive_action(player), '<t>')
+                        local offensive_action = actions.get_offensive_action(player)
+                        if offensive_action then
+                            if stand_if_resting(player) then return true end
+                            healer:take_action(offensive_action, '<t>')
+                            action_taken = true
+                        end
                     end
                 else                            --Different targets
                     if partner_engaged and (not self_engaged) then
+                        if stand_if_resting(player) then return true end
                         healer:send_cmd('input /as '..offense.assist.name)
+                        action_taken = true
                     end
                 end
             elseif self_engaged and hb.modes.independent then
-                healer:take_action(actions.get_offensive_action(player), '<t>')
+                local offensive_action = actions.get_offensive_action(player)
+                if offensive_action then
+                    if stand_if_resting(player) then return true end
+                    healer:take_action(offensive_action, '<t>')
+                    action_taken = true
+                end
             end
             offense.cleanup()
         end
+        return action_taken
     end
 end
 

@@ -21,6 +21,13 @@ Cure I when leveling. Curaga is considered when at least two injured party
 members are close together by default. Healing still requires an available,
 usable spell and a target in range.
 
+When HealBot is active, it will rest to recover your own HP and MP if you are
+idle, auto-engage is off, the party has been stationary for a few seconds, and
+HealBot has no action to perform. While following, it stays down until the
+follow target exceeds the configured distance; without follow, party movement
+ends the rest. It also stands when an action is needed or your HP and MP are
+full.
+
 ### Status HUD and quick options
 
 Click HealBot's character status line to turn the addon on or off. Click
@@ -145,7 +152,7 @@ Place the healBot folder in .../Windower/addons/
 | //hb **f**ollow charName | Follow player charName |
 | //hb **f**ollow <t> | Follow current target |
 | //hb **f**ollow off | Stop following |
-| //hb **f**ollow dist # | Set the follow distance to # |
+| //hb **f**ollow dist # | Set the follow distance to # yalms (valid range: greater than 0 and less than 45) |
 | //hb ignore charName | Ignore player charName so they won't be healed |
 | //hb unignore charName | Stop ignoring player charName (note: will not watch a player that would not otherwise be watched) |
 | //hb watch charName | Watch player charName so they will be healed |

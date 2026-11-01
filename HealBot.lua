@@ -54,11 +54,97 @@ local status_menu = require('HealBot_statusMenu')
 
 local ipc_req = ipc_protocol.encode_request()
 local can_act_statuses = S{0, 1, 5, 85}    --0/1/5/85 = idle/engaged/chocobo/other_mount
+local resting_status = res.statuses:with('en', 'Resting').id
+can_act_statuses:add(resting_status)
 local dead_statuses = S{2, 3}
 local pt_keys = {'party1_count', 'party2_count', 'party3_count'}
 local pm_keys = {
     {'p0','p1','p2','p3','p4','p5'}, {'a10','a11','a12','a13','a14','a15'}, {'a20','a21','a22','a23','a24','a25'}
 }
+local party_motion = {members={}, checked_at=0, stationary=false}
+
+
+local function party_is_stationary(now)
+    if now - party_motion.checked_at < 0.5 then
+        return party_motion.stationary
+    end
+    party_motion.checked_at = now
+
+    local party = windower.ffxi.get_party()
+    local my_zone = party.p0 and party.p0.zone
+    if my_zone == nil then
+        party_motion.stationary = false
+        return false
+    end
+
+    local active_members = {}
+    local stationary = true
+    local function check_member(member)
+        if not member or member.zone ~= my_zone or not member.name then return end
+        active_members[member.name] = true
+        local mob = windower.ffxi.get_mob_by_name(member.name)
+        if not mob or not mob.x or not mob.y then
+            stationary = false
+            return
+        end
+
+        local state = party_motion.members[member.name]
+        if not state then
+            party_motion.members[member.name] = {x=mob.x, y=mob.y, last_moved=now}
+            stationary = false
+            return
+        end
+
+        local dx, dy = mob.x - state.x, mob.y - state.y
+        if (dx * dx + dy * dy) > 0.25 then
+            state.x, state.y, state.last_moved = mob.x, mob.y, now
+        end
+        if now - state.last_moved < 3 then stationary = false end
+    end
+
+    check_member(party.p0)
+    for group_index, count_key in ipairs(pt_keys) do
+        for member_index = 1, party[count_key] or 0 do
+            check_member(party[pm_keys[group_index][member_index]])
+        end
+    end
+    for name in pairs(party_motion.members) do
+        if not active_members[name] then party_motion.members[name] = nil end
+    end
+
+    party_motion.stationary = stationary
+    return stationary
+end
+
+
+local function should_rest(player, moving, now)
+    local vitals = player.vitals or {}
+    local hp_percent = player.hpp or vitals.hpp
+    if hp_percent == nil and vitals.hp and vitals.mhp and vitals.mhp > 0 then
+        hp_percent = (vitals.hp / vitals.mhp) * 100
+    end
+    if hp_percent == nil and player.id then
+        local self_mob = windower.ffxi.get_mob_by_id(player.id)
+        hp_percent = self_mob and self_mob.hpp
+    end
+    local mp_percent = vitals.mpp
+    if mp_percent == nil and vitals.mp and vitals.mmp and vitals.mmp > 0 then
+        mp_percent = (vitals.mp / vitals.mmp) * 100
+    end
+    local needs_recovery = (hp_percent ~= nil and hp_percent < 100)
+        or (mp_percent ~= nil and mp_percent < 100)
+    local idle_or_resting = player.status == 0 or player.status == resting_status
+    local follow_target_in_range = false
+    if player.status == resting_status and settings.follow.active and settings.follow.target then
+        local target = windower.ffxi.get_mob_by_name(settings.follow.target)
+        local distance = target and healer:dist_from(target.id) or -1
+        follow_target_in_range = distance >= 0 and distance <= (settings.follow.distance or 3)
+    end
+    local party_is_quiet = party_is_stationary(now) or follow_target_in_range
+    return hb.active and idle_or_resting and not moving and needs_recovery
+        and not offense.assist.engage
+        and party_is_quiet
+end
 
 
 hb._events['load'] = windower.register_event('load', function()
@@ -113,6 +199,11 @@ end)
 hb._events['inc'] = windower.register_event('incoming chunk', handle_incoming_chunk)
 hb._events['cmd'] = windower.register_event('addon command', processCommand)
 hb._events['mouse'] = windower.register_event('mouse', function(event_type, x, y)
+    if event_type == 2 and hb.ui_dragged then
+        hb.ui_dragged = false
+        utils.save_settings()
+    end
+
     local status_text = hb.txts.actionInfo
     if event_type ~= 2 or not status_text or not status_text:visible() then return end
 
@@ -153,6 +244,13 @@ hb._events['render'] = windower.register_event('prerender', function()
     local player = windower.ffxi.get_player()
     healer.name = player and player.name or 'Player'
     if (player ~= nil) and can_act_statuses:contains(player.status) then
+        if player.status == resting_status and hb.resting_by_healbot and not hb.active then
+            healer:send_cmd('input /heal')
+            hb.resting_by_healbot = false
+        elseif player.status ~= resting_status and hb.resting_by_healbot
+            and now - (hb.rest_attempt_at or now) > 2 then
+            hb.resting_by_healbot = false
+        end
         local partner, targ = offense.assistee_and_target()
         hb.follow_target_exists()   --Attempts to prevent autorun problems
         local follow = settings.follow
@@ -186,7 +284,19 @@ hb._events['render'] = windower.register_event('prerender', function()
             --hb.active = false    --Quick stop when debugging
             if healer:action_delay_passed() then
                 healer.last_action = now                    --Refresh stored action check time
-                actions.take_action(player, partner, targ)
+                local action_taken = actions.take_action(player, partner, targ)
+                if action_taken then
+                    hb.resting_by_healbot = false
+                elseif should_rest(player, moving, now) then
+                    if player.status ~= resting_status and not hb.resting_by_healbot then
+                        healer:send_cmd('input /heal')
+                        hb.resting_by_healbot = true
+                        hb.rest_attempt_at = now
+                    end
+                elseif player.status == resting_status and hb.resting_by_healbot then
+                    healer:send_cmd('input /heal')
+                    hb.resting_by_healbot = false
+                end
             end
         end
         
@@ -308,7 +418,9 @@ end
 
 function hb.isPerformingAction(moving)
     local acting = healer:is_acting()
-    local status = ('is %s'):format(acting and 'performing an action' or (moving and 'moving' or 'idle'))
+    local player = windower.ffxi.get_player()
+    local resting = player and player.status == resting_status
+    local status = ('is %s'):format(acting and 'performing an action' or (resting and 'resting' or (moving and 'moving' or 'idle')))
     
     if (os.clock() - healer.zone_enter) < 25 then
         acting = true
@@ -322,7 +434,6 @@ function hb.isPerformingAction(moving)
         status = 'is disabled'
     end
     
-    local player = windower.ffxi.get_player()
     if (player ~= nil) then
         local mpp = player.vitals.mpp
         if (mpp <= 10) then
