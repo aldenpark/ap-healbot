@@ -57,6 +57,7 @@ local can_act_statuses = S{0, 1, 5, 85}    --0/1/5/85 = idle/engaged/chocobo/oth
 local resting_status = res.statuses:with('en', 'Resting').id
 can_act_statuses:add(resting_status)
 local dead_statuses = S{2, 3}
+local low_mp_rest_threshold = 10
 local pt_keys = {'party1_count', 'party2_count', 'party3_count'}
 local pm_keys = {
     {'p0','p1','p2','p3','p4','p5'}, {'a10','a11','a12','a13','a14','a15'}, {'a20','a21','a22','a23','a24','a25'}
@@ -65,6 +66,9 @@ local party_motion = {members={}, checked_at=0, stationary=false}
 
 
 local function party_is_stationary(now)
+    -- Sample positions at most twice per second. A member counts as settled
+    -- only after three seconds without meaningful movement, avoiding rest
+    -- toggles during short pauses in party travel.
     if now - party_motion.checked_at < 0.5 then
         return party_motion.stationary
     end
@@ -118,6 +122,8 @@ end
 
 
 local function should_rest(player, moving, now)
+    -- Rest only while active, idle, recovering, and not following combat; a
+    -- nearby follow target also makes party movement safe to tolerate.
     local vitals = player.vitals or {}
     local hp_percent = player.hpp or vitals.hpp
     if hp_percent == nil and vitals.hp and vitals.mhp and vitals.mhp > 0 then
@@ -133,6 +139,7 @@ local function should_rest(player, moving, now)
     end
     local needs_recovery = (hp_percent ~= nil and hp_percent < 100)
         or (mp_percent ~= nil and mp_percent < 100)
+    local low_mp = mp_percent ~= nil and mp_percent <= low_mp_rest_threshold
     local idle_or_resting = player.status == 0 or player.status == resting_status
     local follow_target_in_range = false
     if player.status == resting_status and settings.follow.active and settings.follow.target then
@@ -141,8 +148,10 @@ local function should_rest(player, moving, now)
         follow_target_in_range = distance >= 0 and distance <= (settings.follow.distance or 3)
     end
     local party_is_quiet = party_is_stationary(now) or follow_target_in_range
+    -- At the HUD's LOW MP threshold, pause auto-engage while idle so resting
+    -- can recover MP; engagement resumes automatically when MP rises.
     return hb.active and idle_or_resting and not moving and needs_recovery
-        and not offense.assist.engage
+        and (not offense.assist.engage or low_mp)
         and party_is_quiet
 end
 
@@ -420,7 +429,10 @@ function hb.isPerformingAction(moving)
     local acting = healer:is_acting()
     local player = windower.ffxi.get_player()
     local resting = player and player.status == resting_status
-    local status = ('is %s'):format(acting and 'performing an action' or (resting and 'resting' or (moving and 'moving' or 'idle')))
+    local engaged = player and player.status == 1
+    local activity = acting and 'performing an action'
+        or (resting and 'resting' or (engaged and 'engaged' or (moving and 'moving' or 'idle')))
+    local status = ('is %s'):format(activity)
     
     if (os.clock() - healer.zone_enter) < 25 then
         acting = true
@@ -477,26 +489,3 @@ function hb.process_ipc(msg)
 end
 
 hb._events['ipc'] = windower.register_event('ipc message', hb.process_ipc)
-
-
---======================================================================================================================
---[[
-Copyright © 2018, Lorand
-All rights reserved.
-Redistribution and use in source and binary forms, with or without modification, are permitted provided that the
-following conditions are met:
-    * Redistributions of source code must retain the above copyright notice, this list of conditions and the
-      following disclaimer.
-    * Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the
-      following disclaimer in the documentation and/or other materials provided with the distribution.
-    * Neither the name of ffxiHealer nor the names of its contributors may be used to endorse or promote products
-      derived from this software without specific prior written permission.
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
-INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-DISCLAIMED. IN NO EVENT SHALL Lorand BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
-CONSEQUENTIAL DAMAGES(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
-PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
-OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-POSSIBILITY OF SUCH DAMAGE.
---]]
---======================================================================================================================

@@ -15,18 +15,33 @@ or ignore additional players can be found below.
 
 HealBot considers monitored party members in the same zone for healing when
 their HP is below 95%. The cure tier is selected from estimated missing HP and
-the configured cure potency values; it is not a fixed HP percentage. The
-default minimum is Cure III. Use `//hb mincure 1` if you want HealBot to use
-Cure I when leveling. Curaga is considered when at least two injured party
-members are close together by default. Healing still requires an available,
-usable spell and a target in range.
+the configured cure potency values; it is not a fixed HP percentage. HealBot
+uses only the top two Cure tiers the healer knows (for example, Cure II and
+Cure III). Use `//hb mincure #` to raise the minimum tier further. Curaga is
+considered when at least two injured party members are close together by
+default. Healing still requires an available, usable spell and a target in
+range.
+To conserve MP, it skips small deficits that would use less than half of the
+minimum Cure tier's expected healing; as MP falls, it waits until the spell
+would replace a larger share of that healing. Targets at or below 40% HP remain
+eligible for urgent healing.
+
+White Mage also keeps Afflatus Solace active when it is not preparing a
+configured damaging spell or weaponskill, and switches to Afflatus Misery for
+those attacks. When a monitored target reaches 20% HP or lower, HealBot uses
+Divine Seal if it is ready, then chooses the highest usable direct Cure tier
+within the normal top-two-tier limit.
 
 When HealBot is active, it will rest to recover your own HP and MP if you are
-idle, auto-engage is off, the party has been stationary for a few seconds, and
-HealBot has no action to perform. While following, it stays down until the
-follow target exceeds the configured distance; without follow, party movement
-ends the rest. It also stands when an action is needed or your HP and MP are
-full.
+idle, the party has been stationary for a few seconds, and
+HealBot has no action to perform. While resting, it waits for the next recovery
+tick before curing, except when a party member is at or below 40% HP. At a tick,
+it only interrupts to cure if that player's HP percentage is at or below your
+current MP percentage. While following, it stays down until the follow target
+exceeds the configured distance; without follow, party movement ends the rest.
+It also stands when your HP and MP are full.
+At 10% MP or lower, HealBot pauses optional buffs and offense and pauses
+auto-engage while idle so it can rest; auto-engage can resume after MP recovers.
 
 ### Status HUD and quick options
 
@@ -135,7 +150,7 @@ Place the healBot folder in .../Windower/addons/
 | //hb off | Deactivate (note: follow will remain active) |
 | //hb refresh | Reload settings xmls in the data folder |
 | //hb status | Displays addon, action, assist/follow, and HUD states in chat |
-| //hb mincure # | Set the minimum cure tier to # (default is 3) |
+| //hb mincure # | Raise the minimum Cure tier (HealBot uses only the top two learned tiers by default) |
 | //hb spam use spellName | Select the spell/action to use for spell spam |
 | //hb spam on/off | Enable or disable spell spam |
 | //hb disable actionType | Disable curing, Curaga, status removal, buffs, debuffs, spell spam, or weaponskills |

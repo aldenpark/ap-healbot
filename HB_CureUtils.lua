@@ -40,6 +40,8 @@ cu.waltzga = {
 }
 
 function cu.init_cure_potencies()
+    -- Potency is character/job configurable because gear, traits, and job
+    -- abilities change how much each tier heals.
     local potency_table = hb.config.cure_potency[healer.name] and hb.config.cure_potency[healer.name][healer.main_job] or hb.config.cure_potency.default
     for spell_group,_ in pairs(potency_table) do
         for spell_tier,_ in pairs(cu[spell_group]) do
@@ -81,6 +83,8 @@ end
 
 
 function cu.injured_pt_members()
+    -- Curaga coverage only considers actual party members; monitored trusts
+    -- remain eligible for single-target cures but are not spatially clustered.
     local party_members = ffxi.party_member_names()
     local injured = {}
     for _,trg in pairs(hb.getMonitoredPlayers()) do
@@ -104,6 +108,8 @@ end
 
 
 function cu.get_weighted_curaga_hp(members_info, names)
+    -- Weight low-HP members more heavily so a Curaga choice responds to danger,
+    -- rather than letting several healthy members dilute one urgent injury.
     local hp, missing, c = 0, 0, 0
     local name_set = S(names)
     for name, minfo in pairs(members_info) do
@@ -118,7 +124,28 @@ function cu.get_weighted_curaga_hp(members_info, names)
 end
 
 
+local function cure_is_worth_the_mp(hp_missing, cure_type, lowest_hpp)
+    -- Keep critical injuries eligible, but avoid spending a full Cure/Curaga
+    -- cost to replace a small fraction of the spell's minimum-tier healing.
+    if lowest_hpp and lowest_hpp <= 40 then return true end
+    if cure_type ~= 'cure' and cure_type ~= 'curaga' then return true end
+
+    local minimum = cu.minimum_tier(cure_type)
+    local potency = cu[cure_type][minimum] and cu[cure_type][minimum].hp
+    if not potency or potency <= 0 then return true end
+
+    local player = windower.ffxi.get_player()
+    local mp_percent = player and player.vitals and player.vitals.mpp or 100
+    -- Raise the useful-healing threshold as MP falls: half a minimum-tier heal
+    -- at full MP, and a full minimum-tier heal once MP is at or below 50%.
+    local useful_fraction = math.min(1, 0.5 + (math.max(0, 100 - mp_percent) * 0.01))
+    return hp_missing >= potency * useful_fraction
+end
+
+
 function cu.pick_best_curaga_possibility()
+    -- Try each injured member as a cast center, then favor the largest group
+    -- inside Curaga range. Distance breaks ties before healing need is scored.
     local too_few = settings.healing.curaga_min_targets
     local members = cu.injured_pt_members()
     local member_count = sizeof(members)
@@ -151,7 +178,7 @@ function cu.pick_best_curaga_possibility()
             best.avg = (avg_dist < best.avg[2]) and avgA or best.avg
             best.cov = best.cov or covA
             best.cov = (coverage[memberA]:size() > best.cov[2]:size()) and covA or best.cov
-            if furthest < 10 then break end    --Everyone is close enough
+            if furthest < 10 then break end    --This center already covers everyone.
         end
     end
     if best.cov[2]:size() < too_few then return nil end
@@ -170,6 +197,9 @@ function cu.pick_best_curaga_possibility()
     for _,name in pairs(coverage[best_target]) do
         min_hpp = min(min_hpp, members[name].hpp)
     end
+    if not cure_is_worth_the_mp(w_missing, settings.healing.modega, min_hpp) then
+        return nil
+    end
     min_hpp = min_hpp * 0.7 --add extra weight
     local target = {name=best_target, missing=w_missing, hpp=min_hpp}
     return cu.get_usable_cure(tier, settings.healing.modega), target
@@ -177,10 +207,12 @@ end
 
 
 function cu.get_cure_queue()
+    -- Queue only meaningful HP deficits; tier selection estimates the missing
+    -- HP first, then availability/cooldown checks can step down to a usable spell.
     local cq = ActionQueue.new()
     local hp_table = cu.get_missing_hps()
     for name,p in pairs(hp_table) do
-        if p.hpp < 95 then
+        if p.hpp < 95 and cure_is_worth_the_mp(p.missing, settings.healing.mode, p.hpp) then
             local tier = cu.get_cure_tier_for_hp(p.missing, settings.healing.mode)
             if tier >= settings.healing.min[settings.healing.mode] then
                 local spell = cu.get_usable_cure(tier, settings.healing.mode)
@@ -231,8 +263,10 @@ end
     Whether or not to accept this tier, based on settings.healing.min[cure_type], is handled elsewhere.
 --]]
 function cu.get_cure_tier_for_hp(hp_missing, cure_type)
+    -- Start at the configured ceiling and step down while the next lower tier
+    -- is predicted to cover the deficit. minimum_tier enforces the two-tier cap.
     local tier = settings.healing.max[cure_type]
-    local min_tier = settings.healing.min[cure_type]
+    local min_tier = cu.minimum_tier(cure_type)
     while tier > min_tier and cu[cure_type][tier-1].hp >= hp_missing do
         tier = tier - 1
     end
@@ -240,11 +274,26 @@ function cu.get_cure_tier_for_hp(hp_missing, cure_type)
 end
 
 
+function cu.minimum_tier(cure_type)
+    -- For direct Cure spells, keep the configured minimum at most one tier below
+    -- the highest learned tier, so low-tier spells are not selected unnecessarily.
+    local minimum = settings.healing.min[cure_type] or 1
+    local maximum = settings.healing.max[cure_type] or 0
+    if cure_type == 'cure' and maximum > 0 then
+        minimum = math.max(minimum, math.max(1, maximum - 1))
+    end
+    return minimum
+end
+
+
 --[[
     Returns resource info for the chosen cure/waltz tier
 --]]
 function cu.get_usable_cure(orig_tier, cure_type)
-    if orig_tier < settings.healing.min[cure_type] then return nil end
+    -- If the preferred tier is unaffordable or cooling down, try lower allowed
+    -- tiers until one is ready; never cross the configured minimum.
+    local min_tier = cu.minimum_tier(cure_type)
+    if orig_tier < min_tier then return nil end
     
     local player = windower.ffxi.get_player()
     local mult = cu.get_multiplier(cure_type)
@@ -258,7 +307,7 @@ function cu.get_usable_cure(orig_tier, cure_type)
     end
     
     local tier = orig_tier
-    while tier >= settings.healing.min[cure_type] do
+    while tier >= min_tier do
         local action = cu[cure_type][tier].res
         local rctime = recasts[action.recast_id] or 0               --Cooldown remaining for current tier
         local mod_cost = action[_p..'_cost'] * mult                 --Modified cost of current tier in MP/TP
@@ -286,15 +335,3 @@ end
 
 
 return cu
-
---==============================================================================
---[[
-Copyright © 2016, Lorand
-All rights reserved.
-Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
-    * Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.
-    * Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer in the documentation and/or other materials provided with the distribution.
-    * Neither the name of ffxiHealer nor the names of its contributors may be used to endorse or promote products derived from this software without specific prior written permission.
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL Lorand BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
---]]
---==============================================================================

@@ -47,6 +47,8 @@ function protocol.encode_response(player)
 end
 
 function protocol.decode(message)
+    -- IPC carries only a buff-ID query/response. Validate every field and cap
+    -- list/message sizes before exposing decoded data to the addon.
     if type(message) ~= 'string' or #message > max_message_length then
         return nil
     end
