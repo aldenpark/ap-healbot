@@ -1,13 +1,13 @@
 --==============================================================================
 --[[
-    Author: Ragnarok.Lorand
+    Author: Alden Park
     HealBot cure handling functions
 --]]
 --==============================================================================
 
 local cu = {cure_types={'cure','waltz','curaga','waltzga'} }
-local Pos = _libs.ap.position
-local ffxi = _libs.ap.ffxi
+local Pos = _libs.ffxi.position
+local ffxi = _libs.ffxi.ffxi
 
 --==============================================================================
 --                  Static Cure Information
@@ -232,13 +232,8 @@ end
 --]]
 function cu.get_cure_tier_for_hp(hp_missing, cure_type)
     local tier = settings.healing.max[cure_type]
-    while tier > 1 do
-        local potency = cu[cure_type][tier].hp
-        local pdelta = potency - cu[cure_type][tier-1].hp
-        local threshold = potency - (pdelta * 0.5)
-        if hp_missing >= threshold then
-            break
-        end
+    local min_tier = settings.healing.min[cure_type]
+    while tier > min_tier and cu[cure_type][tier-1].hp >= hp_missing do
         tier = tier - 1
     end
     return tier
@@ -263,7 +258,7 @@ function cu.get_usable_cure(orig_tier, cure_type)
     end
     
     local tier = orig_tier
-    while tier > 1 do
+    while tier >= settings.healing.min[cure_type] do
         local action = cu[cure_type][tier].res
         local rctime = recasts[action.recast_id] or 0               --Cooldown remaining for current tier
         local mod_cost = action[_p..'_cost'] * mult                 --Modified cost of current tier in MP/TP

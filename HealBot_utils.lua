@@ -1,6 +1,6 @@
 --==============================================================================
 --[[
-    Author: Ragnarok.Lorand
+    Author: Alden Park
     HealBot utility functions that don't belong anywhere else
 --]]
 --==============================================================================
@@ -8,9 +8,9 @@
 --==============================================================================
 
 utils = {normalize={}}
-local ap_res = _libs.ap.resources
-local lc_res = ap_res.lc_res
-local ffxi = _libs.ap.ffxi
+local resources_lib = _libs.ffxi.resources
+local lc_res = resources_lib.lc_res
+local ffxi = _libs.ffxi.ffxi
 
 
 function utils.normalize_str(str)
@@ -309,17 +309,23 @@ function processCommand(command,...)
     elseif command == 'status' then
         printStatus()
     elseif command == 'info' then
-        if not _libs.ap.exec then
-            atc(3,'Unable to parse info. Windower/addons/libs/ap/ap_exec.lua was unable to be loaded.')
-            atc(3,'If you would like to use this function, please visit https://github.com/aldenpark/ap-libs to download it.')
+        if not _libs.ffxi.exec then
+            atc(3,'Unable to parse info. Windower/addons/libs/ffxi/exec.lua was unable to be loaded.')
+            atc(3,'If you would like to use this function, please visit https://github.com/aldenpark/ffxi-libs to download it.')
             return
         end
         local cmd = args[1]     --Take the first element as the command
         table.remove(args, 1)   --Remove the first from the list of args
-        _libs.ap.exec.process_input(cmd, args)
+        _libs.ffxi.exec.process_input(cmd, args)
     else
         atc('Error: Unknown command')
     end
+end
+
+local processCommandImpl = processCommand
+function processCommand(...)
+    processCommandImpl(...)
+    utils.save_settings()
 end
 
 
@@ -330,13 +336,13 @@ local function _get_player_id(player_name)
     end
     return nil
 end
-utils.get_player_id = _libs.ap.advutils.scached(_get_player_id)
+utils.get_player_id = _libs.ffxi.advutils.scached(_get_player_id)
 
 
 function utils.register_offensive_debuff(args, cancel)
     local argstr = table.concat(args,' ')
     local spell_name = utils.formatActionName(argstr)
-    local spell = ap_res.action_for(spell_name)
+    local spell = resources_lib.action_for(spell_name)
     if (spell ~= nil) then
         if healer:can_use(spell) then
             offense.maintain_debuff(spell, cancel)
@@ -352,7 +358,7 @@ end
 function utils.register_spam_action(args)
     local argstr = table.concat(args,' ')
     local action_name = utils.formatActionName(argstr)
-    local action = ap_res.action_for(action_name)
+    local action = resources_lib.action_for(action_name)
     if (action ~= nil) then
         if healer:can_use(action) then
             settings.spam.name = action.en
@@ -369,7 +375,7 @@ end
 function utils.register_ws(args)
     local argstr = table.concat(args,' ')
     local wsname = utils.formatActionName(argstr)
-    local ws = ap_res.action_for(wsname)
+    local ws = resources_lib.action_for(wsname)
     if (ws ~= nil) then
         settings.ws.name = ws.en
         atcfs('Will now use %s', ws.en)
@@ -452,7 +458,7 @@ end
 
 function toggleMode(mode, cmd, msg, msgErr)
     utils.toggleX(hb.modes, mode, cmd, msg, msgErr)
-    _libs.ap.debug = hb.modes.debug
+    _libs.ffxi.debug = hb.modes.debug
 end
 
 function disableCommand(cmd, disable)
@@ -615,8 +621,73 @@ end
 --          Output Handling Functions
 --==============================================================================
 
+local healing_type_names = {
+    cure = 'Cure', waltz = 'Curing Waltz', curaga = 'Curaga', waltzga = 'Divine Waltz',
+}
+
+local function tier_name(tier)
+    return (tier and tier > 0 and toRomanNumeral(tier)) or 'none'
+end
+
+local function healing_type_status(cure_type)
+    local healing = settings.healing or {}
+    local minimum = healing.min and healing.min[cure_type]
+    local maximum = healing.max and healing.max[cure_type]
+    local name = healing_type_names[cure_type]
+    if not name then return 'not initialized' end
+    if maximum == nil then return name..' not initialized' end
+    if maximum == 0 then return name..' unavailable' end
+    if not minimum then return ('%s highest %s (minimum not set)'):format(name, tier_name(maximum)) end
+    if minimum and minimum > maximum then
+        return ('%s unavailable (minimum %s; highest %s)'):format(name, tier_name(minimum), tier_name(maximum))
+    end
+    if minimum == maximum then
+        return ('%s %s (minimum %s)'):format(name, tier_name(maximum), tier_name(minimum))
+    end
+    return ('%s %s-%s (minimum %s)'):format(name, tier_name(minimum), tier_name(maximum), tier_name(minimum))
+end
+
+function utils.singleTargetHealingStatus()
+    local mode = settings.healing and settings.healing.mode
+    if mode ~= 'cure' and mode ~= 'waltz' then return 'not initialized' end
+    return healing_type_status(mode)
+end
+
+function utils.healingTierStatus()
+    local healing = settings.healing or {}
+    local mode = healing.mode
+    if mode ~= 'cure' and mode ~= 'waltz' then return 'not initialized; turn HealBot on to detect spells' end
+    return utils.singleTargetHealingStatus()..'; '..healing_type_status(healing.modega)
+end
+
 function printStatus()
-    windower.add_to_chat(1, 'HealBot is now '..(hb.active and 'active' or 'off')..'.')
+    local disabled = settings.disable or {}
+    local text_boxes = settings.textBoxes or {}
+    local follow = settings.follow or {}
+    local assist = offense.assist or {}
+    local spam = settings.spam or {}
+    local ws = settings.ws or {}
+    local on_off = function(value) return value and 'ON' or 'OFF' end
+    local target = function(name) return name or 'not set' end
+    local enabled = function(key) return on_off(not disabled[key]) end
+
+    windower.add_to_chat(1, ('HealBot: %s'):format(hb.active and 'ON' or 'OFF'))
+    windower.add_to_chat(1, '  Healing: '..utils.healingTierStatus())
+    windower.add_to_chat(1, ('  Actions: cure %s | curaga %s | status removal %s | buffs %s | debuffs %s'):format(
+        enabled('cure'), enabled('curaga'), enabled('na'), enabled('buff'), enabled('debuff')))
+    windower.add_to_chat(1, ('  Assist: %s (%s), auto-engage %s | Follow: %s (%s), distance %s'):format(
+        on_off(assist.active), target(assist.name), on_off(assist.engage),
+        on_off(follow.active), target(follow.target), tostring(follow.distance or 3)))
+    windower.add_to_chat(1, ('  Spam: %s (%s) | Weaponskill: %s (%s)'):format(
+        (spam.active and not disabled.spam) and 'ON' or 'OFF', target(spam.name),
+        (ws.name and not disabled.ws) and 'READY' or (ws.name and 'DISABLED' or 'NOT SET'), target(ws.name)))
+    windower.add_to_chat(1, ('  Settings: ignore trusts %s | deactivate indoors %s | activate outdoors %s'):format(
+        on_off(settings.ignoreTrusts), on_off(settings.deactivateIndoors), on_off(settings.activateOutdoors)))
+    windower.add_to_chat(1, ('  HUD: action info %s | queue %s | monitored players %s | movement %s'):format(
+        on_off(text_boxes.actionInfo and text_boxes.actionInfo.visible),
+        on_off(text_boxes.actionQueue and text_boxes.actionQueue.visible),
+        on_off(text_boxes.montoredBox and text_boxes.montoredBox.visible),
+        on_off(text_boxes.moveInfo and text_boxes.moveInfo.visible)))
 end
 
 --==============================================================================
@@ -632,12 +703,14 @@ function utils.load_configs()
             montoredBox={x=-150,y=600,font='Arial',size=10,visible=true}
         },
         spam = {name='Stone'},
-        healing = {min={cure=3,curaga=1,waltz=2,waltzga=1},curaga_min_targets=2},
+        assist = {active=false, engage=false},
+        healing = {min={cure=1,curaga=1,waltz=2,waltzga=1},curaga_min_targets=2},
         disable = {curaga=false},
         ignoreTrusts=true, deactivateIndoors=true, activateOutdoors=false
     }
-    local loaded = ap_settings.load('data/settings.lua', defaults)
+    local loaded = settings_lib.load('data/settings.lua', defaults)
     utils.update_settings(loaded)
+    offense.assist = settings.assist
     utils.refresh_textBoxes()
     
     local cure_potency_defaults = {
@@ -650,10 +723,10 @@ function utils.load_configs()
     
     hb.config = {
         aliases = config.load('../shortcuts/data/aliases.xml'),
-        mabil_debuffs = ap_settings.load('data/mabil_debuffs.lua'),
-        buff_lists = ap_settings.load('data/buffLists.lua', buff_lists_defaults),
-        priorities = ap_settings.load('data/priorities.lua'),
-        cure_potency = ap_settings.load('data/cure_potency.lua', cure_potency_defaults)
+        mabil_debuffs = settings_lib.load('data/mabil_debuffs.lua'),
+        buff_lists = settings_lib.load('data/buffLists.lua', buff_lists_defaults),
+        priorities = settings_lib.load('data/priorities.lua'),
+        cure_potency = settings_lib.load('data/cure_potency.lua', cure_potency_defaults)
     }
     hb.config.priorities.players =        hb.config.priorities.players or {}
     hb.config.priorities.jobs =           hb.config.priorities.jobs or {}
@@ -667,6 +740,10 @@ function utils.load_configs()
     local msg = hb.configs_loaded and 'Rel' or 'L'
     hb.configs_loaded = true
     atcc(262, msg..'oaded config files.')
+end
+
+function utils.save_settings()
+    settings_lib.save(settings, true)
 end
 
 
@@ -699,9 +776,11 @@ function utils.update_settings(loaded)
     table.update_if_not_set(settings, {
         disable = {},
         follow = {delay = 0.08, distance = 3},
-        healing = {minCure = 3, minCuraga = 1, minWaltz = 2, minWaltzga = 1},
-        spam = {}
+        healing = {minCure = 1, minCuraga = 1, minWaltz = 2, minWaltzga = 1},
+        spam = {},
+        assist = {active = false, engage = false}
     })
+    setmetatable(settings, getmetatable(loaded))
 end
 
 function utils.refresh_textBoxes()
@@ -768,9 +847,10 @@ function help_text()
         {'bufflists','Lists the currently configured spells/abilities in each bufflist'},
         {'spam [use <spell> | <bool>]','Sets the spell to be spammed on assist target\s enemy, or toggles being active (default: Stone, off)'},
         {'dbcmd','Add/remove debuff spell to maintain on assist target\'s enemy, toggle on/off, or list current debuffs to maintain'},
-        {'mincure <number>','Sets the minimum cure spell tier to cast (default: 3)'},
+        {'mincure <number>','Sets the minimum cure spell tier to cast (default: 1)'},
         {'disable <action type>','Disables actions of a given type (cure, buff, na)'},
         {'enable <action type>','Re-enables actions of a given type (cure, buff, na) if they were disabled'},
+        {'status','Shows HealBot, action, assist, follow, and HUD states'},
         {'reset [buffs | debuffs | both [on <player>]]','Resets the list of buffs/debuffs that have been detected, optionally for a single player'},
         {'ignore_debuff <player/always> <debuff>','Ignores when the given debuff is cast on the given player or everyone'},
         {'unignore_debuff <player/always> <debuff>','Stops ignoring the given debuff for the given player or everyone'},

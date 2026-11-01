@@ -1,8 +1,8 @@
 _addon.name = 'HealBot'
-_addon.author = 'Lorand'
+_addon.author = 'Alden Park'
 _addon.command = 'hb'
-_addon.lastUpdate = '2018.05.22.0'
-_addon.version = _addon.lastUpdate
+_addon.lastUpdate = '2026.11.01.0'
+_addon.version = '1.0.0'
 
 --[[
 TODO:
@@ -19,21 +19,22 @@ TODO:
 --]]
 
 require('luau')
-require('ap/ap_utils')
-_libs.ap.include_addon_name = true
-_libs.ap.req('all', {n='packets',v='2016.10.27.0'})
+require('ffxi/utils')
+_libs.ffxi.include_addon_name = true
+_libs.ffxi.req('all', {n='packets',v='1.0.0'})
 _libs.req('queues')
-ap_settings = _libs.ap.settings
-serialua = _libs.ap.serialization
+settings_lib = _libs.ffxi.settings
+local ipc_protocol = require('HealBot_ipc')
 
 hb = {
     active = false, configs_loaded = false, partyMemberInfo = {}, ignoreList = S{}, extraWatchList = S{},
+    statusMenuOpen = false,
     modes = {['showPacketInfo'] = false, ['debug'] = false, ['mob_debug'] = false, ['independent'] = false},
     _events = {}, txts = {}, config = {}
 }
 healer = T{}
 settings = {}
-_libs.ap.debug = hb.modes.debug
+_libs.ffxi.debug = hb.modes.debug
 
 res = require('resources')
 config = require('config')
@@ -49,8 +50,9 @@ actions = require('HB_Actions')
 buffs = require('HealBot_buffHandling')
 require('HealBot_packetHandling')
 require('HealBot_queues')
+local status_menu = require('HealBot_statusMenu')
 
-local ipc_req = serialua.encode({method='GET', pk='buff_ids'})
+local ipc_req = ipc_protocol.encode_request()
 local can_act_statuses = S{0, 1, 5, 85}    --0/1/5/85 = idle/engaged/chocobo/other_mount
 local dead_statuses = S{2, 3}
 local pt_keys = {'party1_count', 'party2_count', 'party3_count'}
@@ -60,14 +62,14 @@ local pm_keys = {
 
 
 hb._events['load'] = windower.register_event('load', function()
-    if not _libs.ap then
-        local err_msg = 'HealBot ERROR: Missing core requirement: https://github.com/aldenpark/ap-libs'
+    if not _libs.ffxi then
+        local err_msg = 'HealBot ERROR: Missing core requirement: https://github.com/aldenpark/ffxi-libs'
         windower.add_to_chat(39, err_msg)
         error(err_msg)
     end
     atcc(262, 'Welcome to HealBot! To see a list of commands, type //hb help')
 
-    _G["healer"] = _libs.ap.actor.Actor.new()
+    _G["healer"] = _libs.ffxi.actor.Actor.new()
     utils.load_configs()
     CureUtils.init_cure_potencies()
 end)
@@ -110,6 +112,33 @@ end)
 
 hb._events['inc'] = windower.register_event('incoming chunk', handle_incoming_chunk)
 hb._events['cmd'] = windower.register_event('addon command', processCommand)
+hb._events['mouse'] = windower.register_event('mouse', function(event_type, x, y)
+    local status_text = hb.txts.actionInfo
+    if event_type ~= 2 or not status_text or not status_text:visible() then return end
+
+    local text_x, text_y = windower.text.get_location(status_text._name)
+    local text_width, text_height = windower.text.get_extents(status_text._name)
+    local flags = status_text:settings().flags
+    if flags.right then text_x = text_x - text_width end
+    if flags.bottom then text_y = text_y - text_height end
+    if x < text_x or x > text_x + text_width or y < text_y or y > text_y + text_height then return end
+
+    local row_count = 2 + (hb.statusMenuOpen and status_menu:size() or 0)
+    local row = math.floor((y - text_y) / (text_height / row_count)) + 1
+    if row == 1 then
+        if hb.active then
+            hb.active = false
+            printStatus()
+        else
+            hb.activate()
+        end
+    elseif row == 2 then
+        hb.statusMenuOpen = not hb.statusMenuOpen
+    else
+        status_menu:toggle(row - 2)
+    end
+    return true
+end)
 
 
 --[[
@@ -230,7 +259,7 @@ local function _getMonitoredPlayers()
     hb.txts.montoredBox:visible(settings.textBoxes.montoredBox.visible)
     return targets
 end
-hb.getMonitoredPlayers = _libs.ap.advutils.tcached(1, _getMonitoredPlayers)
+hb.getMonitoredPlayers = _libs.ffxi.advutils.tcached(1, _getMonitoredPlayers)
 
 
 local function _getMonitoredIds()
@@ -243,7 +272,7 @@ local function _getMonitoredIds()
     end
     return ids
 end
-hb.getMonitoredIds = _libs.ap.advutils.tcached(1, _getMonitoredIds)
+hb.getMonitoredIds = _libs.ffxi.advutils.tcached(1, _getMonitoredIds)
 
 
 function hb.follow_target_exists()
@@ -302,52 +331,37 @@ function hb.isPerformingAction(moving)
     end
     
     local hb_status = hb.active and '\\cs(0,0,255)[ON]\\cr' or '\\cs(255,0,0)[OFF]\\cr'
-    hb.txts.actionInfo:text((' %s %s %s'):format(hb_status, healer.name, status))
+    local menu_status = hb.statusMenuOpen and 'Options [-]' or 'Options [+]'
+    local text = (' %s %s %s\n  %s'):format(hb_status, healer.name, status, menu_status)
+    if hb.statusMenuOpen then
+        text = text..'\n'..status_menu:text()
+    end
+    hb.txts.actionInfo:text(text)
     hb.txts.actionInfo:visible(settings.textBoxes.actionInfo.visible)
     return acting
 end
 
 
 function hb.process_ipc(msg)
-    local loaded = serialua.decode(msg)
+    local loaded = ipc_protocol.decode(msg)
     if loaded == nil then
-        atc(53, 'Received nil IPC message')
-    elseif type(loaded) ~= 'table' then
-        atcfs(264, 'IPC message: %s', loaded)
+        return
     elseif loaded.method == 'GET' then
-        if loaded.pk ~= nil then        
-            if loaded.pk == 'buff_ids' then
-                local player = windower.ffxi.get_player()
-                local response = {
-                    method='POST', pk='buff_ids', val=player.buffs,
-                    pid=player.id, name=player.name, stype=player.spawn_type
-                }
-                local encoded = serialua.encode(response)
-                windower.send_ipc_message(encoded)
-            else
-                atcfs(123, 'Invalid pk for GET request: %s', loaded.pk)
-            end
-        else
-            atcfs(123, 'Invalid GET request: %s', msg)
+        local player = windower.ffxi.get_player()
+        if player == nil then return end
+        local response = ipc_protocol.encode_response(player)
+        if response ~= nil then
+            windower.send_ipc_message(response)
         end
     elseif loaded.method == 'POST' then
-        if loaded.pk ~= nil then        
-            if loaded.pk == 'buff_ids' then
-                if loaded.name ~= nil then                
-                    local player = windower.ffxi.get_mob_by_name(loaded.name)
-                    player = player or {id=loaded.pid,name=loaded.name,spawn_type=loaded.stype}
-                    buffs.review_active_buffs(player, loaded.val)
-                else
-                    atcfs(123, 'Missing name in POST message: %s', msg)
-                end
-            else
-                atcfs(123, 'Invalid pk for POST message: %s', loaded.pk)
+        for _,buff_id in ipairs(loaded.val) do
+            if res.buffs[buff_id] == nil then
+                return
             end
-        else
-            atcfs(123, 'Invalid POST message: %s', msg)
         end
-    else
-        atcfs(123, 'Invalid IPC message: %s', msg)
+        local player = windower.ffxi.get_mob_by_name(loaded.name)
+        player = player or {id=loaded.pid,name=loaded.name,spawn_type=loaded.spawn_type}
+        buffs.review_active_buffs(player, loaded.val)
     end
 end
 

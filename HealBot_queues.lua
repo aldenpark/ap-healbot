@@ -1,6 +1,6 @@
 --==============================================================================
 --[[
-    Author: Ragnarok.Lorand
+    Author: Alden Park
     HealBot action queue building & handling functions
 --]]
 --==============================================================================
@@ -152,7 +152,7 @@ local function _getPlayerPriority(tname)
     local playerprio = prios.players[tname] or prios.players[tname:lower()] or prios.default
     return math.min(jobprio, playerprio)
 end
-getPlayerPriority = _libs.ap.advutils.scached(_getPlayerPriority)
+getPlayerPriority = _libs.ffxi.advutils.scached(_getPlayerPriority)
 
 
 function getBuffPriority(buff)

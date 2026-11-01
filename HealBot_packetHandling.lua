@@ -1,16 +1,16 @@
 --==============================================================================
 --[[
-    Author: Ragnarok.Lorand
+    Author: Alden Park
     HealBot packet handling functions
 --]]
 --==============================================================================
 
-local messages_blacklist = _libs.ap.packets.messages_blacklist
-local messages_initiating = _libs.ap.packets.messages_initiating
-local messages_completing = _libs.ap.packets.messages_completing
+local messages_blacklist = _libs.ffxi.packets.messages_blacklist
+local messages_initiating = _libs.ffxi.packets.messages_initiating
+local messages_completing = _libs.ffxi.packets.messages_completing
 
-local get_action_info = _libs.ap.packets.get_action_info
-local parse_char_update = _libs.ap.packets.parse_char_update
+local get_action_info = _libs.ffxi.packets.get_action_info
+local parse_char_update = _libs.ffxi.packets.parse_char_update
 
 
 --[[

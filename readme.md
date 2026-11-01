@@ -1,8 +1,8 @@
 # HealBot
 
-## Dependency: [AP Libraries](https://github.com/aldenpark/ap-libs)
+## Dependency: [FFXI Libraries](https://github.com/aldenpark/ffxi-libs)
 
-Install the library files under `Windower/addons/libs/ap/` before loading HealBot.
+Install the library files under `Windower/addons/libs/ffxi/` before loading HealBot.
 
 ## NEW: IPC has been added! (see below)
 
@@ -10,6 +10,47 @@ Install the library files under `Windower/addons/libs/ap/` before loading HealBo
 
 By default, HealBot will monitor the party that it is in.  Commands to monitor
 or ignore additional players can be found below.
+
+### Healing behavior
+
+HealBot considers monitored party members in the same zone for healing when
+their HP is below 95%. The cure tier is selected from estimated missing HP and
+the configured cure potency values; it is not a fixed HP percentage. The
+default minimum is Cure III. Use `//hb mincure 1` if you want HealBot to use
+Cure I when leveling. Curaga is considered when at least two injured party
+members are close together by default. Healing still requires an available,
+usable spell and a target in range.
+
+### Status HUD and quick options
+
+Click HealBot's character status line to turn the addon on or off. Click
+`Options [+]` to open the quick-options menu, then click a row to toggle it.
+Click `Options [-]` to close the menu. The menu includes curing, Curaga, status
+removal, buffs, debuffs, spell spam, weaponskills, assist, auto-engage, follow,
+and Trust handling. Set an assist or follow target with its command before
+turning that feature on from the menu.
+
+`//hb status` prints the current addon, action, assist/follow, and HUD states
+in chat, including the healing mode, minimum tier, and highest available tier.
+
+### Status removal
+
+When status removal is enabled and your job can use the needed spell, HealBot
+attempts to remove detected effects using these spells:
+
+| Spell | Effects |
+| --- | --- |
+| Cure | Lullaby |
+| Blindna | Blindness |
+| Cursna | Curse, Doom |
+| Paralyna | Paralysis |
+| Poisona | Poison |
+| Silena | Silence |
+| Stona | Petrification |
+| Viruna | Disease, Plague |
+| Erase | Weight, Accuracy Down, Addle, AGI Down, Attack Down, Bind, Bio, Burn, Choke, CHR Down, Defense Down, DEX Down, Dia, Drown, Elegy, Evasion Down, Frost, Inhibit TP, INT Down, Magic Acc. Down, Magic Atk. Down, Magic Def. Down, Magic Evasion Down, Max HP Down, Max MP Down, Max TP Down, MND Down, Nocturne, Rasp, Requiem, Shock, Slow, STR Down, VIT Down |
+
+The detected effect must be recognized by HealBot's packet and debuff data.
 
 Buffs gained via job abilities are now supported, but have not yet been tested
 extensively.  Composure has been confirmed to work.  With the addition of job
@@ -42,6 +83,10 @@ characters on the same computer!
 Only the healer's HealBot needs to be on - the non-healer just needs to have
 HealBot loaded to be able to tell the healer's instance about its active buffs
 and debuffs.
+
+All Windower instances participating in IPC must use the updated HealBot. IPC
+messages now use a fixed buff-sync format; older Lua-serialized messages are
+ignored.
 
 
 ### Settings
@@ -82,8 +127,12 @@ Place the healBot folder in .../Windower/addons/
 | //hb on | Activate |
 | //hb off | Deactivate (note: follow will remain active) |
 | //hb refresh | Reload settings xmls in the data folder |
-| //hb status | Displays whether or not healBot is active in the chat log |
+| //hb status | Displays addon, action, assist/follow, and HUD states in chat |
 | //hb mincure # | Set the minimum cure tier to # (default is 3) |
+| //hb spam use spellName | Select the spell/action to use for spell spam |
+| //hb spam on/off | Enable or disable spell spam |
+| //hb disable actionType | Disable curing, Curaga, status removal, buffs, debuffs, spell spam, or weaponskills |
+| //hb enable actionType | Re-enable a disabled action type |
 | //hb reset | Reset buff & debuff monitors |
 | //hb reset buffs | Reset buff monitors |
 | //hb reset debuffs | Reset debuff monitors |

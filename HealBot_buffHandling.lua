@@ -1,6 +1,6 @@
 --==============================================================================
 --[[
-    Author: Ragnarok.Lorand
+    Author: Alden Park
     HealBot buff handling functions
 --]]
 --==============================================================================
@@ -9,10 +9,10 @@ local buffs = {
     debuffList = {},
     buffList = {},
     ignored_debuffs = {},
-    action_buff_map = ap_settings.load('data/action_buff_map.lua')
+    action_buff_map = settings_lib.load('data/action_buff_map.lua')
 }
-local lc_res = _libs.ap.resources.lc_res
-local ffxi = _libs.ap.ffxi
+local lc_res = _libs.ffxi.resources.lc_res
+local ffxi = _libs.ffxi.ffxi
 
 --==============================================================================
 --          Local Player Buff Checking

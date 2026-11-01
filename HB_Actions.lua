@@ -1,13 +1,13 @@
 --==============================================================================
 --[[
-	Author: Ragnarok.Lorand
+	Author: Alden Park
 	HealBot action handling functions
 --]]
 --==============================================================================
 
 local actions = {queue=L()}
-local ap_res = _libs.ap.resources
-local ffxi = _libs.ap.ffxi
+local resources_lib = _libs.ffxi.resources
+local ffxi = _libs.ffxi.ffxi
 
 
 local function local_queue_reset()
@@ -147,7 +147,7 @@ function actions.get_offensive_action(player)
         return action.db
     end
     
-    if (not settings.disable.ws) and (settings.ws ~= nil) and healer:ready_to_use(ap_res.action_for(settings.ws.name)) then
+    if (not settings.disable.ws) and (settings.ws ~= nil) and healer:ready_to_use(resources_lib.action_for(settings.ws.name)) then
         local sign = settings.ws.sign or '>'
         local hp = settings.ws.hp or 0
         local hp_ok = ((sign == '<') and (target.hpp <= hp)) or ((sign == '>') and (target.hpp >= hp))
@@ -166,10 +166,10 @@ function actions.get_offensive_action(player)
         end
         
         if (hp_ok and partner_ok) then
-            return {action=ap_res.action_for(settings.ws.name),name='<t>'}
+            return {action=resources_lib.action_for(settings.ws.name),name='<t>'}
         end
     elseif (not settings.disable.spam) and settings.spam.active and (settings.spam.name ~= nil) then
-        local spam_action = ap_res.action_for(settings.spam.name)
+        local spam_action = resources_lib.action_for(settings.spam.name)
         if (target.hpp > 0) and healer:ready_to_use(spam_action) and healer:in_casting_range('<t>') then
             local _p_ok = (player.vitals.mp >= spam_action.mp_cost)
             if spam_action.tp_cost ~= nil then

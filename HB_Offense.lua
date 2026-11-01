@@ -1,12 +1,12 @@
 --==============================================================================
 --[[
-    Author: Ragnarok.Lorand
+    Author: Alden Park
     HealBot offense handling functions
 --]]
 --==============================================================================
 
 local offense = {
-    immunities=ap_settings.load('data/mob_immunities.lua'),
+    immunities=settings_lib.load('data/mob_immunities.lua'),
     assist={active = false, engage = false},
     debuffs={}, ignored={}, mobs={}, dispel={},
     debuffing_active = true
