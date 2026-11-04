@@ -336,6 +336,41 @@ function hb.activate()
             settings.healing.modega = 'curaga'
         end
         hb.active = true
+        local party = windower.ffxi.get_party()
+        local roster_log = io.open(windower.addon_path..'data/party-roster.log', 'a')
+        if roster_log then
+            roster_log:write(('\n[%s] HealBot enabled for %s (ignoreTrusts=%s)\n')
+                :format(os.date('%Y-%m-%d %H:%M:%S'), player.name, tostring(settings.ignoreTrusts)))
+            local function log_member(slot, member)
+                if not member then return end
+                local mob = member.mob or windower.ffxi.get_mob_by_name(member.name)
+                local spawn_type = mob and mob.spawn_type
+                local is_trust = spawn_type == 14
+                local same_zone = member.zone == party.p0.zone
+                local is_party_slot = slot:match('^p') ~= nil
+                local watched = hb.extraWatchList:contains(member.name)
+                local ignored = hb.ignoreList:contains(member.name)
+                local dead = member.hpp ~= nil and member.hpp <= 0
+                local monitored = same_zone and (is_party_slot or watched) and not ignored
+                    and (not settings.ignoreTrusts or not is_trust or watched) and not dead
+                roster_log:write(('  %s %s | trust=%s spawn_type=%s hpp=%s zone=%s monitored=%s\n')
+                    :format(slot, member.name or '<unknown>', tostring(is_trust),
+                        tostring(spawn_type), tostring(member.hpp), tostring(member.zone), tostring(monitored)))
+            end
+            for i = 0, 5 do
+                log_member('p'..i, party['p'..i])
+            end
+            for group = 1, 2 do
+                for i = 0, 5 do
+                    local slot = 'a'..group..i
+                    log_member(slot, party[slot])
+                end
+            end
+            roster_log:close()
+            atc('Party roster written to data/party-roster.log')
+        else
+            atc(123, 'Unable to write data/party-roster.log')
+        end
     end
     printStatus()
 end
@@ -378,7 +413,21 @@ local function _getMonitoredPlayers()
     hb.txts.montoredBox:visible(settings.textBoxes.montoredBox.visible)
     return targets
 end
-hb.getMonitoredPlayers = _libs.ffxi.advutils.tcached(1, _getMonitoredPlayers)
+local monitored_players_cache
+local monitored_players_cached_at
+function hb.refreshMonitoredPlayers()
+    monitored_players_cache = _getMonitoredPlayers()
+    monitored_players_cached_at = os.clock()
+    return monitored_players_cache
+end
+
+function hb.getMonitoredPlayers()
+    local now = os.clock()
+    if monitored_players_cache == nil or (now - monitored_players_cached_at) > 1 then
+        return hb.refreshMonitoredPlayers()
+    end
+    return monitored_players_cache
+end
 
 
 local function _getMonitoredIds()

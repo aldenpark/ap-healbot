@@ -282,6 +282,7 @@ function processCommand(command,...)
         monitorCommand(command, args[1])
     elseif command == 'ignoretrusts' then
         utils.toggleX(settings, 'ignoreTrusts', args[1], 'Ignoring of Trust NPCs', 'IgnoreTrusts')
+        hb.refreshMonitoredPlayers()
     elseif command == 'packetinfo' then
         toggleMode('showPacketInfo', args[1], 'Packet info display', 'PacketInfo')
     elseif command == 'debug' then

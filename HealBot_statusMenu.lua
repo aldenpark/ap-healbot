@@ -94,6 +94,7 @@ local options = {
         label = function() return ('Ignore Trusts: %s'):format(settings.ignoreTrusts and 'ON' or 'OFF') end,
         toggle = function()
             settings.ignoreTrusts = not settings.ignoreTrusts
+            hb.refreshMonitoredPlayers()
             atc('Ignoring Trusts is now '..(settings.ignoreTrusts and 'on.' or 'off.'))
         end,
     },

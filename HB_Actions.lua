@@ -91,6 +91,35 @@ local function local_queue_disp()
     hb.txts.actionQueue:visible(settings.textBoxes.actionQueue.visible)
 end
 
+local function local_queue_status(message)
+    actions.queue:append('Decision: '..message)
+    local_queue_disp()
+end
+
+local function select_defensive_action(action, reason)
+    if action then
+        local_queue_status(('%s → %s (%s)'):format(action.action.en, action.name, reason))
+    else
+        local_queue_status(reason)
+    end
+    return action
+end
+
+local function trust_party_target(name)
+    local party = windower.ffxi.get_party()
+    for slot = 1, 5 do
+        local member = party['p'..slot]
+        if member and member.name == name then
+            local mob = windower.ffxi.get_mob_by_target('p'..slot) or member.mob
+            if mob and mob.spawn_type == 14 then
+                return '<p'..slot..'>', mob
+            end
+            return nil, nil
+        end
+    end
+    return nil, nil
+end
+
 
 --[[
 	Builds an action queue for defensive actions.  Returns the action deemed most important at the time.
@@ -100,14 +129,23 @@ function actions.get_defensive_action(offensive_action)
 	-- be compared against debuff/buff priorities consistently.
 	local action = {}
 	local player = windower.ffxi.get_player()
+	local high_mp = player and player.vitals and player.vitals.mpp
+		and player.vitals.mpp > 90
 	local afflatus_name = desired_afflatus(player, offensive_action)
 	
 	if (not settings.disable.cure) then
 		local cureq = CureUtils.get_cure_queue()
 		while (not cureq:empty()) do
 			local cact = cureq:pop()
-            local_queue_insert(cact.action.en, cact.name)
-			if (action.cure == nil) and healer:in_casting_range(cact.name) then
+			local target_token, target_mob = trust_party_target(cact.name)
+			local distance = healer:dist_from(target_mob or cact.name)
+			local in_range = distance >= 0 and distance < 20.9
+			cact.command_target = target_token
+            local candidate_status = distance < 0 and 'target lookup failed'
+                or (not in_range and ('out of range: %.1f yalms (max 20.9)'):format(distance))
+                or (action.cure == nil and 'eligible and in range' or 'another Cure has priority')
+            local_queue_insert(cact.action.en, cact.name..' ['..candidate_status..']')
+			if (action.cure == nil) and in_range then
 				action.cure = cact
 			end
 		end
@@ -146,8 +184,6 @@ function actions.get_defensive_action(offensive_action)
         local_queue_insert(afflatus_action.action.en, afflatus_action.name)
     end
 	
-	local_queue_disp()
-	
 	if (action.cure ~= nil) then
 		local player = windower.ffxi.get_player()
 		if player and player.main_job == 'WHM' and action.cure.hpp <= critical_cure_hpp then
@@ -155,30 +191,35 @@ function actions.get_defensive_action(offensive_action)
 			if largest_cure then
 				action.cure.action = largest_cure
 				if divine_seal and not healer:buff_active('Divine Seal') and healer:ready_to_use(divine_seal) then
-					return {type='ability', action=divine_seal, name=player.name, emergency_cure=true}
+					return select_defensive_action(
+						{type='ability', action=divine_seal, name=player.name, emergency_cure=true},
+						'action at or below 20% HP; using Divine Seal first')
 				end
 			end
 		end
 		if player and player.status == resting_status and is_emergency_cure(action.cure) then
-			return action.cure
+			return select_defensive_action(action.cure, 'emergency Cure while resting')
 		end
+		-- Above 90% MP, don't let optional buffs or status removal displace a
+		-- queued Cure; the healer has enough MP to prioritize keeping the party up.
+		if high_mp then return select_defensive_action(action.cure, 'MP above 90%; Cure takes priority') end
 		if (action.debuff ~= nil) and (action.debuff.action.en == 'Paralyna') and (action.debuff.name == healer.name) then
-			return action.debuff
+			return select_defensive_action(action.debuff, 'Paralyna on healer takes priority')
 		elseif (action.debuff ~= nil) and ((action.debuff.prio + 2) < action.cure.prio) then
-			return action.debuff
+			return select_defensive_action(action.debuff, 'status removal has higher priority than Cure')
 		elseif (action.buff ~= nil) and ((action.buff.prio + 2) < action.cure.prio) then
-			return action.buff
+			return select_defensive_action(action.buff, 'buff has higher priority than Cure')
 		end
-		return action.cure
+		return select_defensive_action(action.cure, 'Cure selected')
 	elseif (action.debuff ~= nil) then
 		if (action.buff ~= nil) and (action.buff.prio < action.debuff.prio) then
-			return action.buff
+			return select_defensive_action(action.buff, 'buff has higher priority than status removal')
 		end
-		return action.debuff
+		return select_defensive_action(action.debuff, 'status removal selected; no eligible Cure')
 	elseif (action.buff ~= nil) then
-		return action.buff
+		return select_defensive_action(action.buff, 'buff selected; no eligible Cure or status removal')
 	end
-	return nil
+	return select_defensive_action(nil, 'no eligible in-range defensive action')
 end
 
 
@@ -188,6 +229,8 @@ function actions.take_action(player, partner, targ)
     local offensive_action
     local low_mp = player.vitals and player.vitals.mpp
         and player.vitals.mpp <= low_mp_rest_threshold
+    local high_mp = player.vitals and player.vitals.mpp
+        and player.vitals.mpp > 90
     local assisting_same_target = targ ~= nil and partner ~= nil
         and player.target_index == partner.target_index
     local independently_engaged = targ == nil and hb.modes.independent and player.status == 1
@@ -197,23 +240,36 @@ function actions.take_action(player, partner, targ)
     local action = actions.get_defensive_action(offensive_action)
     if player.status == resting_status then
         -- Rest ticks are separated by about 10 seconds after the initial tick.
-        -- Wait for the next tick unless a critical cure is needed; ordinary
-        -- healing is allowed then only when its urgency justifies the MP spent.
+        -- High MP allows a queued Cure to interrupt rest immediately; at lower
+        -- MP, wait for the next tick unless a critical cure is needed.
         local now = os.clock()
         rest_tick_due_at = rest_tick_due_at or (now + 20 + rest_tick_margin)
-        if not is_emergency_cure(action) then
-            if now < rest_tick_due_at then return false end
+        local immediate_cure = high_mp and action and action.type == 'cure'
+        if not is_emergency_cure(action) and not immediate_cure then
+            if now < rest_tick_due_at then
+                local_queue_status('waiting for rest recovery tick')
+                return false
+            end
             rest_tick_due_at = now + 10 + rest_tick_margin
             local mp_percent = player.vitals and player.vitals.mpp
             local cure_at_tick = action and action.type == 'cure'
                 and action.hpp and mp_percent and action.hpp <= mp_percent
-            if not cure_at_tick then return false end
+            if not cure_at_tick then
+                local reason = action and action.type == 'cure'
+                    and 'at rest tick, but Cure target HP% is above your MP%'
+                    or 'at rest tick, but no Cure meets the recovery rule'
+                local_queue_status(reason)
+                return false
+            end
         end
     else
         rest_tick_due_at = nil
     end
     if (action ~= nil) then         --If there's a defensive action to perform
-        if stand_if_resting(player) then return true end
+        if stand_if_resting(player) then
+            local_queue_status('standing before selected action')
+            return true
+        end
         --Record attempt time for buffs/debuffs
         buffs.buffList[action.name] = buffs.buffList[action.name] or {}
         if (action.type == 'buff') and (buffs.buffList[action.name][action.buff]) then
@@ -221,7 +277,10 @@ function actions.take_action(player, partner, targ)
         elseif (action.type == 'debuff') then
             buffs.debuffList[action.name][action.debuff.id].attempted = os.clock()
         end
-        healer:take_action(action)
+        local target = action.type == 'cure' and (action.command_target or trust_party_target(action.name)) or nil
+        local_queue_status(('sending %s command to %s%s'):format(
+            action.action.en, action.name, target and (' via '..target) or ''))
+        healer:take_action(action, target)
         return true
     else                        --Otherwise, there may be an offensive action
         local action_taken = false
